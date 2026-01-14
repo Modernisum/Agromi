@@ -1,0 +1,26 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets & Config
+.env
+*.env
+key.txt
+key_info.txt
+google-services.json
+firebase_options.dart
+
+# Dependencies
+vendor/
