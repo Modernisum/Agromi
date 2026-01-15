@@ -2,13 +2,12 @@ package auth
 
 import (
 	"context"
-	"fmt"
-	"math/rand"
 	"net/http"
 	"time"
 
 	"Agromi/core/router"
 	"Agromi/database"
+	"Agromi/utils"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -27,58 +26,79 @@ func init() {
 }
 
 func handleRegister(c *gin.Context) {
-	var user User
-	if err := c.ShouldBindJSON(&user); err != nil {
+	var input struct {
+		AuthToken        string   `json:"auth_token" binding:"required"`
+		Name             string   `json:"name" binding:"required"`
+		UserType         string   `json:"user_type" binding:"required,oneof=farmer consumer admin"`
+		ProfilePhotoURL  string   `json:"profile_photo_url"`
+		RegionalLanguage string   `json:"regional_language"`
+		Crops            []Crop   `json:"crops"`
+		Location         Location `json:"location"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Validate Farmer Details
-	if user.UserType == "farmer" {
-		if user.ProfilePhotoURL == "" || user.RegionalLanguage == "" || len(user.Crops) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Farmers must provide profile photo, language, and at least one crop"})
-			return
-		}
-		// Basic check for location (0,0 is valid but unlikely for a real user, but let's just check if it was provided if possible?
-		// Since it's a struct value, it defaults to 0. We can add a check if needed, but strict 0,0 check might be checking default.
-		// Let's assume frontend sends it.
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	collection := database.GetCollection("users")
 
-	// Check existing (handled by Unique Index mostly, but good for custom error)
-	count, _ := collection.CountDocuments(ctx, bson.M{"phone": user.Phone})
+	// 1. Verify Firebase Token
+	token, err := utils.AuthClient.VerifyIDToken(ctx, input.AuthToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Auth Token"})
+		return
+	}
+	uid := token.UID
+	// Extract phone/email from token if available
+	phone, _ := token.Claims["phone_number"].(string)
+	email, _ := token.Claims["email"].(string)
+
+	usersColl := database.GetCollection("users")
+
+	// 2. Check existence
+	count, err := usersColl.CountDocuments(ctx, bson.M{"auth_token_num": uid})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
 	if count > 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
 		return
 	}
 
-	user.ID = primitive.NewObjectID()
-	user.IsBlocked = false
-	user.CreatedAt = time.Now()
+	// 3. Create User
+	newUser := User{
+		ID:               primitive.NewObjectID(),
+		Phone:            phone,
+		Email:            email,
+		AuthTokenNum:     uid, // Store UID
+		Name:             input.Name,
+		UserType:         input.UserType,
+		IsBlocked:        false,
+		ProfilePhotoURL:  input.ProfilePhotoURL,
+		RegionalLanguage: input.RegionalLanguage,
+		Crops:            input.Crops,
+		Location:         input.Location,
+		CreatedAt:        time.Now(),
+	}
 
-	// Populate GeoLocation for Geospatial Index
-	if user.Location.Latitude != 0 || user.Location.Longitude != 0 {
-		user.GeoLocation = &GeoJSON{
+	// GeoLocation
+	if newUser.Location.Latitude != 0 || newUser.Location.Longitude != 0 {
+		newUser.GeoLocation = &GeoJSON{
 			Type:        "Point",
-			Coordinates: []float64{user.Location.Longitude, user.Location.Latitude},
+			Coordinates: []float64{newUser.Location.Longitude, newUser.Location.Latitude},
 		}
 	}
 
-	// Auto-generate Auth Token Number (e.g., random 8-digit string or UUID)
-	// For simplicity, using a timestamp-based random string
-	rand.Seed(time.Now().UnixNano())
-	user.AuthTokenNum = fmt.Sprintf("AG-%d-%d", time.Now().Unix(), rand.Intn(10000))
-
-	_, err := collection.InsertOne(ctx, user)
+	_, err = usersColl.InsertOne(ctx, newUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully", "id": user.ID})
+	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully", "id": newUser.ID})
 }
 
 // createPhoneIndex ensures fast lookups by Phone

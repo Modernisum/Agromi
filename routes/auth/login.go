@@ -1,12 +1,14 @@
 package auth
 
 import (
+	"Agromi/utils"
 	"context"
 	"net/http"
 	"time"
 
 	"Agromi/core/router"
 	"Agromi/database"
+	"Agromi/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -68,8 +70,7 @@ func init() {
 
 func handleLogin(c *gin.Context) {
 	var input struct {
-		Phone string `json:"phone"`
-		Email string `json:"email"`
+		AuthToken string `json:"auth_token" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -80,56 +81,49 @@ func handleLogin(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// 1. Verify Firebase Token
+	token, err := utils.AuthClient.VerifyIDToken(ctx, input.AuthToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Auth Token"})
+		return
+	}
+
+	uid := token.UID
+	// Optional: Get phone/email from token if needed for cross-check
+	// email := token.Claims["email"]
+	// phone := token.Claims["phone_number"]
+
 	var userID primitive.ObjectID
 	var userType string
 	var userName string
 	var isBlocked bool
 
-	// 1. Search in Users (Farmers/Consumers)
+	// 2. Search in Users (Farmers/Consumers) by AuthTokenNum (UID) or Phone/Email
+	// Ideally, we store UID in AuthTokenNum or a separate field "firebase_uid"
+	// For now, let's assume we match by Phone OR Email if provided, OR we rely on UID in AuthTokenNum
+	// Refactor: We should prioritize UID lookup.
+
 	usersColl := database.GetCollection("users")
 	var user User
 
-	filter := bson.M{}
-	if input.Phone != "" {
-		filter["phone"] = input.Phone
-	} else if input.Email != "" {
-		filter["email"] = input.Email
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Phone or Email required"})
-		return
-	}
+	// Try finding by AuthTokenNum (UID) first
+	errFind := usersColl.FindOne(ctx, bson.M{"auth_token_num": uid}).Decode(&user)
 
-	err := usersColl.FindOne(ctx, filter).Decode(&user)
-
-	if err == nil {
-		// Found in Users
+	if errFind == nil {
 		userID = user.ID
 		userType = user.UserType
 		userName = user.Name
 		isBlocked = user.IsBlocked
-	} else if err == mongo.ErrNoDocuments {
-		// 2. Search in Consultants
-		consultantsColl := database.GetCollection("consultants")
-		var consultant struct { // Minimal struct for auth check
-			ID        primitive.ObjectID `bson:"_id"`
-			Name      string             `bson:"name"`
-			Phone     string             `bson:"phone"`
-			Type      string             `bson:"type"`
-			IsBlocked bool               `bson:"is_blocked"`
-		}
-		// Consultants mostly use Phone, but we can try generic filter if we add Email later
-		errCons := consultantsColl.FindOne(ctx, filter).Decode(&consultant)
-		if errCons == nil {
-			// Found in Consultants
-			userID = consultant.ID
-			userType = "consultant" // Generalized type, specific type is in consultant profile search
-			userName = consultant.Name
-			isBlocked = consultant.IsBlocked
-		} else {
-			// Not found in either
-			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-			return
-		}
+	} else if errFind == mongo.ErrNoDocuments {
+		// Not found in Users... Check Consultants?
+		// NOTE: Consultants might not have Firebase UID attached yet if they migrated?
+		// For strict new flow, we expect UID to be present.
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
+			"uid":   uid, // Send back UID so frontend can use it for registration
+		})
+		return
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return

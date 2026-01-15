@@ -3,15 +3,16 @@ package main
 import (
 	"log"
 
-	"Agromi/database"
 	"Agromi/routes"
+	"Agromi/utils"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	// 1. Connect to MongoDB
-	database.Connect()
+	utils.ConnectDB()
+	utils.InitFirebase() // Restore Firebase Init
 
 	// 2. Initialize Gin Router
 	app := gin.Default()
