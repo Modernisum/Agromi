@@ -18,6 +18,8 @@ func main() {
 
 	// 3. Register Routes
 	// All routes are auto-registered by the init() functions in the 'routes' package
+	// utils.InitTwilio() // Removed (Reverted to Firebase)
+	// utils.InitFirebase() // Removed (Trusted Frontend)
 	log.Println("DEBUG: Calling routes.SetupRoutes...")
 	routes.SetupRoutes(app)
 

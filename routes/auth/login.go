@@ -18,7 +18,8 @@ import (
 // User & Session Models
 type User struct {
 	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Phone            string             `bson:"phone" json:"phone" binding:"required"`
+	Phone            string             `bson:"phone" json:"phone"` // Not required binding if Email provided
+	Email            string             `bson:"email" json:"email"`
 	Name             string             `bson:"name" json:"name" binding:"required"`
 	IsBlocked        bool               `bson:"is_blocked" json:"is_blocked"`
 	UserType         string             `bson:"user_type" json:"user_type" binding:"required,oneof=farmer consumer admin"`
@@ -67,8 +68,8 @@ func init() {
 
 func handleLogin(c *gin.Context) {
 	var input struct {
-		Phone         string `json:"phone" binding:"required"`
-		FirebaseToken string `json:"firebase_token" binding:"required"` // For verification
+		Phone string `json:"phone"`
+		Email string `json:"email"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -87,7 +88,18 @@ func handleLogin(c *gin.Context) {
 	// 1. Search in Users (Farmers/Consumers)
 	usersColl := database.GetCollection("users")
 	var user User
-	err := usersColl.FindOne(ctx, bson.M{"phone": input.Phone}).Decode(&user)
+
+	filter := bson.M{}
+	if input.Phone != "" {
+		filter["phone"] = input.Phone
+	} else if input.Email != "" {
+		filter["email"] = input.Email
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Phone or Email required"})
+		return
+	}
+
+	err := usersColl.FindOne(ctx, filter).Decode(&user)
 
 	if err == nil {
 		// Found in Users
@@ -105,7 +117,8 @@ func handleLogin(c *gin.Context) {
 			Type      string             `bson:"type"`
 			IsBlocked bool               `bson:"is_blocked"`
 		}
-		errCons := consultantsColl.FindOne(ctx, bson.M{"phone": input.Phone}).Decode(&consultant)
+		// Consultants mostly use Phone, but we can try generic filter if we add Email later
+		errCons := consultantsColl.FindOne(ctx, filter).Decode(&consultant)
 		if errCons == nil {
 			// Found in Consultants
 			userID = consultant.ID
