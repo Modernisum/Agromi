@@ -21,6 +21,8 @@ key.txt
 key_info.txt
 google-services.json
 firebase_options.dart
+serviceAccountKey.json
+base64_creds.txt
 
 # Dependencies
 vendor/

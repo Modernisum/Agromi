@@ -16,7 +16,18 @@ var AuthClient *auth.Client
 
 func InitFirebase() {
 	// 1. Check for encoded credentials in Env Var (Best for Railway)
+	cwd, _ := os.Getwd()
+	fmt.Printf("DATA DEBUG: CWD: %s\n", cwd)
+	files, _ := os.ReadDir(".")
+	for _, f := range files {
+		fmt.Printf("DATA DEBUG: Found File: %s\n", f.Name())
+	}
 	credsBase64 := os.Getenv("FIREBASE_CREDENTIALS_BASE64")
+	if credsBase64 == "" {
+		fmt.Println("DATA DEBUG: Env Var FIREBASE_CREDENTIALS_BASE64 is EMPTY/MISSING")
+	} else {
+		fmt.Printf("DATA DEBUG: Env Var FIREBASE_CREDENTIALS_BASE64 is FOUND (Len: %d)\n", len(credsBase64))
+	}
 
 	var opt option.ClientOption
 
