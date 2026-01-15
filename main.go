@@ -28,7 +28,7 @@ func main() {
 	routes.SetupRoutes(app)
 
 	// 4. Start Server
-	log.Println("🚜 Agromi Backend starting on :8080")
+	log.Println("🚜 Agromi Backend starting on :8080 (v2: Fix Applied)")
 	if err := app.Run(":8080"); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
