@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"Agromi/database"
 	"Agromi/routes"
 	"Agromi/utils"
 
@@ -13,7 +14,7 @@ import (
 
 func main() {
 	// 1. Connect to MongoDB
-	utils.ConnectDB()
+	database.Connect()
 	utils.InitFirebase() // Restore Firebase Init
 
 	// 2. Initialize Gin Router
